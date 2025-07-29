@@ -1,0 +1,76 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+df = pd.read_csv("clinical1.csv")
+# Load and clean dataset
+clinical = pd.read_csv(clinical_csv_path)
+df.dropna(inplace=True)
+
+# Bin continuous target into categories
+bins = [0,60, 62.5, 65,67.5, 70, 72.5,float('inf')]
+labels = ['L1', 'L2', 'L3','L4', 'L5', 'L6','L7']
+df['DoseCategory'] = pd.cut(df['Total prescribed Radiation treatment dose'], bins=bins, labels=labels, right=True)
+
+# Drop original continuous target and irrelevant columns
+columns_to_drop = [
+    "Total prescribed Radiation treatment dose",
+    "Radiation Treatment_duration",
+    "Radiation treatment_number of fractions",
+    "Radiation treatment_dose per fraction",
+    "TCIA Radiomics dummy ID of To_Submit_Final",
+    "TCIA Radiomics dummy ID of Merged updated ASRM V2"
+]
+df = df.drop(columns=columns_to_drop)
+df.dropna(inplace=True)
+
+# Encode categorical columns
+categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+label_encoders = {}
+for col in categorical_cols:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col].astype(str))
+    label_encoders[col] = le
+
+# Features and target
+X = df.drop(columns=['DoseCategory'])
+y = df['DoseCategory']
+
+# Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Scale
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Classification models mapped from your regression list
+models = {
+    'Random Forest Classifier': RandomForestClassifier(random_state=42),
+    'Gradient Boosting Classifier': GradientBoostingClassifier(random_state=42),
+    'Support Vector Classifier': SVC(),
+    'Logistic Regression (Linear)': LogisticRegression(max_iter=2000),
+    'Ridge Classifier': RidgeClassifier(),
+    'Lasso-like Logistic Regression (L1 penalty)': LogisticRegression(penalty='l1', solver='liblinear')
+}
+
+# Train and evaluate
+results = {}
+for name, model in models.items():
+    model.fit(X_train_scaled, y_train)
+    y_pred = model.predict(X_test_scaled)
+    results[name] = {
+        'Accuracy': accuracy_score(y_test, y_pred),
+        'Report': classification_report(y_test, y_pred)
+    }
+
+# Print results
+for name, result in results.items():
+    print(f"\nModel: {name}")
+    print("Accuracy:", result['Accuracy'])
+    print("Classification Report:\n", result['Report'])
+    print("-" * 50)
