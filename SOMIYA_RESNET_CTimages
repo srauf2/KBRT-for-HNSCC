@@ -1,0 +1,53 @@
+import os
+import torch
+import torchvision.transforms as transforms
+from torchvision.models import resnet18
+from PIL import Image
+import numpy as np
+from tqdm import tqdm
+
+# 1. Load ResNet18 without classification layer
+model = resnet18(pretrained=True)
+model = torch.nn.Sequential(*list(model.children())[:-1])  # Remove final FC
+model.eval()
+
+# 2. Image transform for ImageNet
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet mean
+                         std=[0.229, 0.224, 0.225])   # ImageNet std
+])
+
+# 3. Function to extract features from a directory of slices
+def extract_patient_features(patient_folder):
+    features = []
+    for fname in sorted(os.listdir(patient_folder)):
+        if fname.endswith('.png'):
+            img_path = os.path.join(patient_folder, fname)
+            img = Image.open(img_path).convert('RGB')
+            img_tensor = transform(img).unsqueeze(0)  # Add batch dim
+            with torch.no_grad():
+                feat = model(img_tensor).squeeze().numpy()  # Shape: (512,)
+            features.append(feat)
+    
+    if features:
+        return np.mean(features, axis=0)  # Aggregate across slices
+    else:
+        return np.zeros(512)  # Fallback if no slices
+
+# 4. Loop through all patients
+base_dir = "/kaggle/input/hnscc-zip/HNSCC_data/ct_images"
+patient_dirs = [os.path.join(base_dir, d) for d in os.listdir(base_dir)]
+patient_features = {}
+
+for patient_path in tqdm(patient_dirs):
+    pid = os.path.basename(patient_path).split('_')[0]  # e.g., HNSCC-01-0003
+    patient_features[pid] = extract_patient_features(patient_path)
+
+# 5. Save to CSV
+import pandas as pd
+features_df = pd.DataFrame.from_dict(patient_features, orient='index')
+features_df.reset_index(inplace=True)
+features_df.rename(columns={'index': 'PatientID'}, inplace=True)
+features_df.to_csv("resnet_features_by_patient.csv", index=False)
